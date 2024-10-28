@@ -1,197 +1,244 @@
-/*
- Arduinoでクレーンゲーム
- 
-   * コイン（10円）投入されたら、ゲーム開始。照明と音楽スタート。
-   * S2,s3それぞれ押してる間だけ、モーターが回転する。
-   * lim1～4にギアボックスが当たって押下されるとモーターはストップ。
-*/
+//クレーンゲーム(/・ω・)/
 
-#define pin_swR 10        // SW Red
-#define pin_swB 11        // SW Blue
 
-#define pin_Xlim A0       
-#define pin_Ylim A1       
-#define pin_ZlimTop A3
-#define pin_ZlimBot A2
+//ピンどもの定義
+//モーターどもの定義
+const int X_motor1 = 2; //motorDriver 1 1A pin
+const int X_motor2 = 3; //motorDriver 1 1B pin
+const int Y_motor1 = 4; //motorDriver 1 2A pin
+const int Y_motor2 = 5; //motorDriver 1 2B pin
+const int Z_motor1 = 6; //motorDriver 2 1A pin
+const int Z_motor2 = 7; //motorDriver 2 1B pin 
+const int Arm_motor1 = 9; //motorDriver 2 2A pin
+const int Arm_motor2 = 10; //motorDriver 2 2B pin
 
-#define Arm A5
+//リミッターどもの定義
+//Xのリミッターの導線よく外れる。注意。
+const int X_limit1 = 13; //X limitter 手前 PULLUP
+const int Y_limit1 = 14; //Y limitter front PULLUP
+const int Y_limit2 = 15; //Y limitter back PULLUP
+const int Z_limit1 = 16; //Z limitter DOWN PULLUP
+const int Z_limit2 = 17; //Z limitter UP PULLUP
+const int sensor = 35; //microwave trig NOT USE
 
-#define pin_mdXA 4
-#define pin_mdXB 5
-#define pin_mdYA 3
-#define pin_mdYB 2
-#define pin_mdZA 6
-#define pin_mdZB 7
+//ボタンたちの定義
+const int button1 = 30; //L button
+const int button2= 31; //R button
 
-const bool ArmOPEN = 1;
-const bool ArmCLOSE = 0;
+//変数どもの宣言
+int xl; //x limitter
+int zl1; //z limitter 1
+int zl2; //z limitter 2
+int yl1; //y limitter 1
+int yl2; //y limitter 2
+int b1 = 0; //L button status
+int b2 = 0; //R button status
+int teat = 0; //Wats is this
+float distance; //NOT USE
+int s = 0;
 
-bool s_red=1, s_blue=1, s_xlim = 1, s_ylim = 1, s_zlimTop = 1, s_zlimBot = 1;
-bool zflag = 1; 
+int clear = 0; //TO CLEAR NOT USE
 
-void X();
-void Y();
-void Z();
+void setup() {
+  //pinModeの山
+  pinMode(X_motor1,OUTPUT);
+  pinMode(Y_motor1,OUTPUT);
+  pinMode(Y_motor2,OUTPUT);
+  pinMode(X_motor2,OUTPUT);
+  pinMode(Z_motor1,OUTPUT);
+  pinMode(Z_motor2,OUTPUT);
+  pinMode(X_limit1,INPUT_PULLUP);
+  pinMode(Z_limit1,INPUT_PULLUP);
+  pinMode(Z_limit2,INPUT_PULLUP);
+  pinMode(Y_limit1,INPUT_PULLUP);
+  pinMode(Y_limit2,INPUT_PULLUP);
+  pinMode(button1,INPUT_PULLUP);
+  pinMode(button2,INPUT_PULLUP);
+  pinMode(Arm_motor1,OUTPUT);
+  pinMode(Arm_motor2,OUTPUT);
+  pinMode(sensor,INPUT_PULLUP);
 
-const bool CW = 1;
-const bool CCW = 0;
+  Serial.begin(9600); //シリアル通信開始。速度9600
 
-void mvX(bool _mvx){
-  digitalWrite(pin_mdXA, _mvx);
-  digitalWrite(pin_mdXB, !_mvx);
-}
-void mvY(bool _mvy){
-  digitalWrite(pin_mdYA, _mvy);
-  digitalWrite(pin_mdYB, !_mvy);
-}
-void mvZ(bool _mvz){
-  digitalWrite(pin_mdZA, _mvz);
-  digitalWrite(pin_mdZB, !_mvz);
-}
-void stopall(){
-  digitalWrite(pin_mdXA, HIGH);
-  digitalWrite(pin_mdXB, HIGH);
-  digitalWrite(pin_mdYA, HIGH);
-  digitalWrite(pin_mdYB, HIGH);
-  digitalWrite(pin_mdZA, HIGH);
-  digitalWrite(pin_mdZB, HIGH);
+  Serial.println("Hello!"); //開始合図
 
-  Serial.println("stop");
-}
+  //リセット
+Serial.println("リセットします"); //TX、RXに他マイコン接続時注意。
+Serial.println("Z　リセット中...");
 
-void setup() 
-{
-  pinMode(pin_swR, INPUT_PULLUP);
-  pinMode(pin_swB, INPUT_PULLUP);
-  pinMode(pin_Xlim, INPUT_PULLUP);    // lim1(ピン14)を入力に設定
-  pinMode(pin_Ylim, INPUT_PULLUP);    // lim1(ピン15)を入力に設定
-  pinMode(pin_ZlimTop, INPUT_PULLUP);    // lim1(ピン16)を入力に設定
-  pinMode(pin_ZlimBot, INPUT_PULLUP);    // lim1(ピン17)を入力に設定
+      digitalWrite(Z_motor1,LOW);
+      digitalWrite(Z_motor2,HIGH);
+      delay(300);
 
-  pinMode(Arm, OUTPUT);
-  stopall();
+   while(1){
+      zl2 = digitalRead(Z_limit2);
 
-  Serial.begin(115200);
-
-  stopall();
-  delay(500);
-
-  digitalWrite(Arm, ArmOPEN);
-  delay(500);
-
-  Serial.println("start");
-}
-
-void loop()
-{
-  X();
-  Y();
-  Z(ArmCLOSE);
-  Home();
+  if(zl2 == 1){      //nolimit
+      digitalWrite(Z_motor1,LOW);
+      digitalWrite(Z_motor2,HIGH);
+    }
+    else{
+      delay(500);
+      digitalWrite(Z_motor1,LOW);
+      digitalWrite(Z_motor2,LOW);
+      break;
+    }
 }
 
-void X(){
-  Serial.println("x");
-  
-  // wait SW Red pushed
-  while(s_red){
-    delay(1);
-    s_red=digitalRead(pin_swR);
+  Serial.println("Z リセット　終了");
+
+    Serial.println("X Y リセット中...");
+
+    int i = 0;
+
+    digitalWrite(X_motor1,HIGH);
+    digitalWrite(X_motor2,LOW);
+    digitalWrite(Y_motor1,HIGH);
+    digitalWrite(Y_motor2,LOW);
+    delay(2000);
+    digitalWrite(X_motor1,LOW);
+    digitalWrite(X_motor2,LOW);
+    digitalWrite(Y_motor1,LOW);
+    digitalWrite(Y_motor2,LOW);
+
+Serial.println("X Y リセット　終了");
+Serial.println("アームを開いています...");
+//OPEN
+digitalWrite(Arm_motor1,LOW);
+digitalWrite(Arm_motor2,LOW);
+
+Serial.println("リセット終了！");
+
+}
+
+
+void loop() {
+ Serial.println("待機時間");
+
+  delay(700);
+  digitalWrite(Arm_motor1,LOW);
+  digitalWrite(Arm_motor2,HIGH);
+  delay(100);
+  digitalWrite(Arm_motor1,LOW);
+  digitalWrite(Arm_motor2,LOW);
+
+  Serial.println("新しいゲームがスタートしました");
+//one round
+  //X prosess
+  xl = digitalRead(X_limit1);
+
+   Serial.println("X 待機中...");
+
+ while(1){
+  b1 = digitalRead(button1);
+  if(b1 == 0){   
+     Serial.println("X　ボタンが押されました");
+    while(b1 == 0){
+    b1 = digitalRead(button1);
+    digitalWrite(X_motor1,LOW);
+    digitalWrite(X_motor2,HIGH);
+    }
+    digitalWrite(X_motor1,LOW);
+    digitalWrite(X_motor2,LOW);
+    break;
   }
-  
-  Serial.println("s red pushed");
-  mvX(CW);
-  
-  //wait SW Red released
-  while(!s_red)
-  {
-    delay(1);
-    s_red=digitalRead(pin_swR); 
+ }
+
+Serial.println("X 終了");
+Serial.println("Y 待機中...");
+
+ while(1){
+  b2 = digitalRead(button2);
+  if(b2 == 0){   
+    Serial.println("Y ボタンが押されました");
+    while(b2 == 0){
+    b2 = digitalRead(button2);
+    digitalWrite(Y_motor1,LOW);
+    digitalWrite(Y_motor2,HIGH);
+    }
+    digitalWrite(Y_motor1,LOW);
+    digitalWrite(Y_motor2,LOW);
+    break;
+  }
+ }
+
+ Serial.println("Y 終了");
+
+  delay(300);
+
+ Serial.println("アームを下ろしています...");
+
+    digitalWrite(Z_motor1,HIGH);
+    digitalWrite(Z_motor2,LOW);
+    delay(4000);
+    digitalWrite(Z_motor1,LOW);
+    digitalWrite(Z_motor2,LOW);
+
+Serial.println("アームを閉じています...");
+
+digitalWrite(Arm_motor1,LOW);
+digitalWrite(Arm_motor2,HIGH);
+
+delay(200);
+
+Serial.println("アームを閉じました");
+Serial.println("アームを持ち上げています...");
+
+  while(1){
+  zl2 = digitalRead(Z_limit2);
+
+  if(zl2 == 1){      //nolimit
+      digitalWrite(Z_motor1,LOW);
+      digitalWrite(Z_motor2,HIGH);
+    }
+    else{
+      delay(500);
+      digitalWrite(Z_motor1,LOW);
+      digitalWrite(Z_motor2,LOW);
+      break;
+    }
   }
 
-  Serial.println("s red released");
-  stopall();
+  Serial.println("アームを持ち上げました");
+  Serial.println("元の位置に戻っています...");
+  Serial.println("X Y 戻っています...");
 
-  s_red = s_blue = s_xlim = s_ylim = s_zlimTop = s_zlimBot = 1;
+
+    digitalWrite(X_motor1,HIGH);
+    digitalWrite(X_motor2,LOW);
+    digitalWrite(Y_motor1,HIGH);
+    digitalWrite(Y_motor2,LOW);
+  delay(2000);
+    digitalWrite(X_motor1,LOW);
+    digitalWrite(X_motor2,LOW);
+    digitalWrite(Y_motor1,LOW);
+    digitalWrite(Y_motor2,LOW);
+
+Serial.println("X Y　リセット終了"); 
+Serial.println("アームを開きます...");
+
+delay(400);
+//OPEN
+digitalWrite(Arm_motor1,LOW);
+digitalWrite(Arm_motor2,LOW);
+
+Serial.println("プロセス終了。");
+Serial.println("ゲーム終了"); //ここで一連の流れは終了。
 }
-
-void Y(){
-  Serial.println("y");
+/*while(1){
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
   
-  //wait sw blue pushed
-  while(s_blue)
-  {
-    delay(1);
-    s_blue = digitalRead(pin_swB);
-  }
-  
-  Serial.println("s blue pushed");
-  mvY(CW);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10); 
+  digitalWrite(trig, LOW);
 
-  //wait sw blue released
-  while(!s_blue)// PBS2が押されている間は、
-  {
-    delay(1);
-    s_blue = digitalRead(pin_swB);
-  }
-  
-  Serial.println("s blue released");
-  stopall();
-  s_red = s_blue = s_xlim = s_ylim = s_zlimTop = s_zlimBot = 1;
-  delay(500);
-}
+  duration = pulseIn(echo, HIGH);
 
-/*****************Z***************/
-void Z(bool _armOorC){
-  Serial.println("z");
-  delay(500);
-  
-  zflag ? mvZ(CW) : mvZ(CCW);
+  duration /= 2;
 
-  while(s_zlimBot && !s_zlimTop){
-    delay(1);
-    s_zlimBot = digitalRead(pin_ZlimBot);
-    s_zlimTop = digitalRead(pin_ZlimTop);
-  }
+  distance = duration * 340 * 100 / 1000000;
 
-  Serial.println("Max depth");
-  stopall();
-
-  delay(500);
-
-  Serial.println("ArmCLOSE");
-  digitalWrite(Arm, _armOorC);
-  delay(50);
-
-  mvZ(CCW);
-  
-  while(s_zlimTop){
-    delay(1);
-    s_zlimTop = digitalRead(pin_ZlimTop);
-  }
-  
-  Serial.println("min depth");
-  delay(1000);
-
-  s_red = s_blue = s_xlim = s_ylim = s_zlimTop = s_zlimBot = 1;
-}
-
-void Home(){
-  stopall();
-  delay(500);
-
-  mvY(CCW);
-  while(s_ylim){
-    s_ylim = digitalRead(pin_Ylim);
-  }
-  Serial.println("Y Home");
-
-  mvX(CCW);
-  while(s_xlim){
-    s_xlim = digitalRead(pin_Xlim); 
-  }
-  Serial.println("X Home");
-  stopall();
-  
-  Z(ArmOPEN);
-}
+  Serial.println(distance);
+  delay(100);
+}*/
